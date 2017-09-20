@@ -19,8 +19,10 @@ import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.counting;
 import static java.util.stream.Collectors.groupingBy;
-import static java.util.stream.Collectors.toList;
 
+/**
+ * Class with constants and utils
+ * */
 class Time{
 
     public enum TimeRange{
@@ -30,7 +32,7 @@ class Time{
             this.offset=offset;
         }
         public int offset;
-    };
+    }
 
     public static HashMap<TimeRange,String> timeRangeStringHashMap;
 
@@ -43,12 +45,16 @@ class Time{
                 put(TimeRange.MONTH, "uuuu-MM");
             }
         };
-    };
+    }
 
     public static BiFunction<String, TimeRange, LocalDateTime> getTime = (str, tr) ->
             LocalDateTime.parse(str, DateTimeFormatter.ofPattern(Time.timeRangeStringHashMap.get(tr)));
 }
 
+/**
+ * Contains cmd line parameters, used for filtering.
+ * Used with jCommander
+ * */
 @Parameters(commandNames = "filter", commandDescription = "Filtering input content")
 class Filtering {
 
@@ -63,9 +69,15 @@ class Filtering {
 
     @Parameter(names = { "-t", "--to"}, description = "to time")
     String endTime = "";
+
+    public boolean noFiltering(){
+        return user.isEmpty() && pattern.isEmpty() && stTime.isEmpty() && endTime.isEmpty();
+    }
 }
 
-
+/**
+ * Predicates, used in stream filtering
+ * */
 class FilteringPredicates{
 
     public static Predicate<LogRecord> testUser(String user) {
@@ -81,19 +93,21 @@ class FilteringPredicates{
         return x -> x.getDateTime(Time.TimeRange.SECOND).isBefore(endTime);
     }
 
-
     public List<Predicate<LogRecord>> predicates = new ArrayList<>();
 
     FilteringPredicates(Filtering filtering) {
-//        System.out.println(Time.getTime.apply(filtering.stTime,Time.TimeRange.HOUR));
         if(!filtering.user.isEmpty())predicates.add(testUser(filtering.user));
         if(!filtering.pattern.isEmpty())predicates.add(testMsg(filtering.pattern));
         if(!filtering.stTime.isEmpty())predicates.add(testTimeAfter(Time.getTime.apply(filtering.stTime,Time.TimeRange.SECOND)));
         if(!filtering.endTime.isEmpty())predicates.add(testTimeBefore(Time.getTime.apply(filtering.endTime,Time.TimeRange.SECOND)));
     }
-
 }
 
+/**
+ * Wrapper for log record, stored as String,
+ * for easy access to logical fields
+ * Used with reason to avoid data duplication
+ * */
 class LogRecord{
 
     String logRecord;
@@ -126,7 +140,10 @@ class LogRecord{
     }
 }
 
-
+/**
+ * Single file filtering
+ * Applies Stream of filtering predicates to log File
+ * */
 class FileFilter implements Callable<Optional<List<LogRecord>>> {
 
     private Path path;
@@ -153,13 +170,13 @@ class FileFilter implements Callable<Optional<List<LogRecord>>> {
 
 
 class Main {
-    @Parameter(names={"--threads", "-t"})
+    @Parameter(names={"--threads", "-t"}, description = "group by user")
     int threads=1;
-    @Parameter(names={"--output", "-o"})
+    @Parameter(names={"--output", "-o"}, description = "output file name")
     String outFilePath;
-    @Parameter(names={"--time", "-a"})
+    @Parameter(names={"--time", "-a"}, description = "group by time")
     String groupByTime;
-    @Parameter(names={"--user", "-u"})
+    @Parameter(names={"--user", "-u"}, description = "group by user")
     String groupByUser;
     @Parameter(names = { "-h", "--help"}, description = "Print this help message and exit", help = true)
     private boolean help;
@@ -176,8 +193,6 @@ class Main {
     private Main(String[] args) {
         JCommander jc = new JCommander(this);
         jc.addCommand("filter", filtering);
-//        jc.addCommand("group",grouping);
-//        jc.addCommand("test",test);
 
         try {
             jc.parse(args);
@@ -187,13 +202,36 @@ class Main {
             System.exit(1);
         }
 
-        if (help || jc.getParsedCommand() == null) {
+        if(filtering.noFiltering())
+            System.exit(0);
+
+        if (help || jc.getParsedCommand() == null || filtering.noFiltering()) {
             jc.usage();
             System.exit(0);
         }
     }
+    //prints formatted map after grouping by time and by user
+    private <T> void printNode(T node){
+        if(node instanceof HashMap) {
+            System.out.println();
+            ((HashMap) node).forEach((k, v) -> {
+                System.out.print(k+" ");
+                printNode(v);
+            });
+        }
+        else
+            System.out.println(node);
+    }
 
     private void run() {
+
+        HashMap<String,Time.TimeRange> trMap=
+                new HashMap<String,Time.TimeRange>(){
+                    {
+                        put("h",Time.TimeRange.HOUR);
+                        put("d",Time.TimeRange.DAY);
+                        put("m",Time.TimeRange.MONTH);
+                    }};
 
         File file=new File(".");
         String currentWorkingDir=file.getAbsolutePath();
@@ -203,7 +241,7 @@ class Main {
             List<Path> fileList=
                     Files.list(Paths.get(currentWorkingDir))
                     .filter(Files::isRegularFile)
-                    .filter(name -> name.toString().endsWith("log"))
+                    .filter(name -> name.toString().endsWith("log") && !name.toString().contains(outFilePath))
                     .collect(Collectors.toList());
 
             ThreadPoolExecutor executor=(ThreadPoolExecutor) Executors.newFixedThreadPool(threads);
@@ -216,16 +254,13 @@ class Main {
             Path outPath = Paths.get(outFilePath);
             List<LogRecord> outList=new ArrayList<>();
 
-//            List<ArrayList<String>> agg=new ArrayList<>();
-//            Consumer<ArrayList<String>> appendToAgg = x -> agg.add(x);
-
             try (BufferedWriter writer = Files.newBufferedWriter(outPath)) {
                 for (Future<Optional<List<LogRecord>>> future : filteredFiles) {
                     try {
                         Optional<List<LogRecord>> lst = future.get();
                         lst.ifPresent(outList::addAll);
                         lst.ifPresent(x -> {
-                            x.forEach(System.out::println);
+//                            x.forEach(System.out::println);
                             x.forEach(s ->{
                                 try{
                                     writer.write('\n'+s.logRecord);
@@ -241,47 +276,19 @@ class Main {
                 e.printStackTrace();
             }
 
-            HashMap<String,Time.TimeRange> trMap=
-                    new HashMap<String,Time.TimeRange>(){
-                    {
-                        put("h",Time.TimeRange.HOUR);
-                        put("d",Time.TimeRange.DAY);
-                        put("m",Time.TimeRange.MONTH);
-                }};
-
-
-            trMap.forEach((k,v)->{
-                System.out.println();
-                outList.stream().collect(groupingBy(x->x.getDateTimeAsString(trMap.get(k)),counting()))
-                        .forEach((k1,v1)->System.out.printf("\n%s %d",k1,v1));
-            });
-
+            System.out.print("Time range / count");
             if(!groupByTime.isEmpty()){
                 Time.TimeRange timeRange=trMap.get(groupByTime);
                 Map<String, Long> groupedByTime=outList.stream().collect(groupingBy(x->x.getDateTimeAsString(timeRange),counting()));
-                groupedByTime.forEach((k,v)->System.out.printf("%s %d",k,v));
-
+                groupedByTime.forEach((k,v)->System.out.printf("\n%s %d",k,v));
             }
 
-            FilteringPredicates fp=new FilteringPredicates(filtering);
-            List<LogRecord> logRecords=outList;//.stream().map(LogRecord::new).collect(Collectors.toList());
-            outList.forEach(x->System.out.println(x.getDateTimeAsString(Time.TimeRange.SECOND)));
-            List<LogRecord> l3=logRecords.stream().filter(t -> fp.predicates.stream().allMatch(f -> f.test(t))).collect(toList());
-
-
-//            Map<String, List<LogRecord>> l1=logRecords.stream().collect(groupingBy(LogRecord::getUser));
-//            Map<String, Long> l2=logRecords.stream().collect(groupingBy(LogRecord::getUser,counting()));
-//            Map<String, Long> tm2=logRecords.stream().collect(groupingBy(x->x.getDateTimeAsString(Time.TimeRange.HOUR),counting()));
-//            Map<String, Long> tm3=logRecords.stream().collect(groupingBy(x->x.getDateTimeAsString(Time.TimeRange.DAY),counting()));
-//            Map<String, Long> tm4=logRecords.stream().collect(groupingBy(x->x.getDateTimeAsString(Time.TimeRange.MONTH),counting()));
-//            tm2.forEach((k,v) -> {System.out.print(k);System.out.println(v);});
-
-
-//            outList.forEach(System.out::println);
-//            outList.stream().map(x->x.getDateTimeAsString(Time.TimeRange.HOUR)).forEach(System.out::println);
-
-
-
+            if(!groupByTime.isEmpty() && !groupByUser.isEmpty()){
+                Time.TimeRange timeRange=trMap.get(groupByTime);
+                Map<String, Map<String, Long>> groupedByTime=outList.stream()
+                        .collect(groupingBy(x->x.getDateTimeAsString(timeRange),groupingBy(LogRecord::getUser,counting())));
+                printNode(groupedByTime);
+            }
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -289,8 +296,4 @@ class Main {
 
     }
 
-
-
 }
-
-
