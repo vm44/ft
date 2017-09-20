@@ -247,12 +247,13 @@ class Main {
             ThreadPoolExecutor executor=(ThreadPoolExecutor) Executors.newFixedThreadPool(threads);
 
             List<Future<Optional<List<LogRecord>>>> filteredFiles =
-                    fileList.stream()
+                    fileList.parallelStream()
                     .map(path -> executor.submit(new FileFilter(path, new FilteringPredicates(filtering))))
                     .collect(Collectors.toList());
 
             Path outPath = Paths.get(outFilePath);
-            List<LogRecord> outList=new ArrayList<>();
+            List<LogRecord> outList=new ArrayList<>();// for collecting records for grouping
+            //if files is very big, it may be better make grouping operation, getting data from output file
 
             try (BufferedWriter writer = Files.newBufferedWriter(outPath)) {
                 for (Future<Optional<List<LogRecord>>> future : filteredFiles) {
