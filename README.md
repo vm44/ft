@@ -15,4 +15,4 @@ Btw, excellent library jCommander, used for cmd line parsing, currently works on
 (see jCommander inner terms) in cmd line (has opened issue on GitHub)
 
 cmd line example
-<program> -t 2 -o out.log -u s -a m filter -u Pete -p a -f 2015-04-05T10:10:10 -t 2017-10-10T10:10:10
+program -t 2 -o out.log -u s -a m filter -u Pete -p patt -f 2015-04-05T10:10:10 -t 2017-10-10T10:10:10
