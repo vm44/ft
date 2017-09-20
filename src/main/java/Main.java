@@ -81,7 +81,7 @@ class Filtering {
 class FilteringPredicates{
 
     public static Predicate<LogRecord> testUser(String user) {
-        return x -> x.getUser().contains(user);}
+        return x -> x.getUser().equals(user);}
 
     public static Predicate<LogRecord> testMsg(String msg) {
         return x -> x.getMsg().contains(msg);}
@@ -132,7 +132,7 @@ class LogRecord{
     }
 
     public String getUser(){
-        return logRecord.substring(delimiterPos[1], delimiterPos[2]);
+        return logRecord.substring(delimiterPos[1]+1, delimiterPos[2]);
     }
 
     public String getMsg(){
